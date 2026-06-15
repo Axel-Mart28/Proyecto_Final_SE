@@ -1,4 +1,6 @@
 import flet as ft
+import threading
+import time
 
 def chat_view(page: ft.Page):
     page.clean()
@@ -7,7 +9,7 @@ def chat_view(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     page.vertical_alignment = ft.MainAxisAlignment.START
 
-    menu_abierto = [False]  # lista para poder modificarlo dentro de funciones
+    menu_abierto = [False]
 
     mensajes = ft.Column(
         controls=[],
@@ -24,39 +26,80 @@ def chat_view(page: ft.Page):
                     bgcolor="#3D5AFE",
                     border_radius=ft.border_radius.all(16),
                     padding=ft.padding.all(14),
-                    width=220,
+                    expand=True,
                 ),
             ],
             alignment=ft.MainAxisAlignment.END,
         )
 
-    def burbuja_agente(texto):
-        return ft.Row(
+    def burbuja_agente(texto=""):
+        texto_widget = ft.Text(texto, color="white", size=15)
+        contenedor = ft.Row(
             controls=[
                 ft.Container(
-                    content=ft.Text(texto, color="white", size=15),
+                    content=texto_widget,
                     padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                    width=220,
+                    expand=True,
                 ),
             ],
             alignment=ft.MainAxisAlignment.START,
         )
+        return contenedor, texto_widget
+
+    def typewriter(texto, texto_widget, delay=0.03):
+        texto_widget.value = ""
+        for char in texto:
+            texto_widget.value += char
+            page.update()
+            time.sleep(delay)
+
+    def mostrar_bienvenida():
+        mensaje = (
+            "¡Bienvenido a Expertech! 👋\n\n"
+            "Soy Expertech-AI y puedo ayudarte a:\n"
+            "• Elegir componentes para tu PC\n"
+            "• Recomendarte un build según tu presupuesto\n"
+            "• Comparar productos del catálogo\n"
+            "• Asesorarte en equipos gamer o de trabajo\n\n"
+            "¿Qué estás buscando hoy?"
+        )
+        burbuja, texto_widget = burbuja_agente()
+        mensajes.controls.append(burbuja)
+        page.update()
+        typewriter(mensaje, texto_widget)
 
     def enviar_mensaje(e):
         texto = campo_texto.value.strip()
         if not texto:
             return
+
         mensajes.controls.append(burbuja_usuario(texto))
         campo_texto.value = ""
         page.update()
-        respuesta = "Analizando tu solicitud con el motor de inferencia..."
-        mensajes.controls.append(burbuja_agente(respuesta))
-        page.update()
+
+        burbuja, texto_widget = burbuja_agente()
+        mensajes.controls.append(burbuja)
+        typewriter("⏳ Analizando tu consulta con el motor de inferencia...", texto_widget)
+
+        def procesar_con_crew():
+            try:
+                from motor_inferencia import procesar_consulta
+                typewriter("⏳ Procesando tu consulta... (esto puede tomar hasta 1 minuto)", texto_widget)
+                resultado = procesar_consulta(texto)
+                texto_widget.value = ""
+                page.update()
+                typewriter(str(resultado), texto_widget, delay=0.01)
+            except Exception as ex:
+                texto_widget.value = f"❌ Error: {str(ex)}"
+                page.update()
+
+        threading.Thread(target=procesar_con_crew, daemon=True).start()
         mensajes.scroll_to(offset=-1, duration=300)
 
     def limpiar_chat(e):
         mensajes.controls.clear()
         page.update()
+        threading.Thread(target=mostrar_bienvenida, daemon=True).start()
 
     def toggle_menu(e):
         if menu_abierto[0]:
@@ -79,7 +122,6 @@ def chat_view(page: ft.Page):
         from views.admin_view import admin_view
         admin_view(page)
 
-    # Opciones del menú
     def opcion_menu(icono, texto, accion):
         return ft.Container(
             content=ft.Row(
@@ -117,7 +159,7 @@ def chat_view(page: ft.Page):
             spacing=4,
         ),
         bgcolor="#1A1A2E",
-        width=0,  # empieza oculto
+        width=0,
         animate=ft.animation.Animation(300, ft.AnimationCurve.EASE_IN_OUT),
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
     )
@@ -153,7 +195,7 @@ def chat_view(page: ft.Page):
                 ft.IconButton(
                     icon=ft.icons.MENU,
                     icon_color="white",
-                    on_click=toggle_menu,  # ← ya conectado
+                    on_click=toggle_menu,
                 ),
                 ft.Text(
                     "Expertech",
@@ -165,7 +207,7 @@ def chat_view(page: ft.Page):
                 ft.IconButton(
                     icon=ft.icons.REFRESH,
                     icon_color="white",
-                    on_click=limpiar_chat
+                    on_click=limpiar_chat,
                 ),
             ],
         ),
@@ -186,7 +228,6 @@ def chat_view(page: ft.Page):
         margin=ft.margin.all(12),
     )
 
-    # Área del chat
     area_chat = ft.Column(
         controls=[
             header,
@@ -201,7 +242,6 @@ def chat_view(page: ft.Page):
         spacing=0,
     )
 
-    # Layout principal: menú + chat side by side
     page.add(
         ft.Row(
             controls=[
@@ -213,3 +253,5 @@ def chat_view(page: ft.Page):
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
     )
+
+    threading.Thread(target=mostrar_bienvenida, daemon=True).start()
